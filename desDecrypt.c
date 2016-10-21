@@ -16,14 +16,15 @@ number of combinations.
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 // The program will try all keys between these these two (and including them).
 // The function getKeyRange reassigns them based on how many other computers
 // you plan to have running this program.
 uint64_t startKey = 0b0;
-uint64_t endKey 0b1111111111111111111111111111111111111111111111111111111111111111;
+uint64_t endKey = 0b1111111111111111111111111111111111111111111111111111111111111111;
 
-void getKeyRange(uint64_t , uint64_t);
+void getKeyRange(int , int);
 uint64_t decrypt(uint64_t);
 uint64_t feistel(uint32_t , uint64_t);
 uint64_t switchHalves(uint64_t);
@@ -35,19 +36,42 @@ uint64_t permute(uint64_t , uint64_t);
 // cipher text.
 int main()
 {
+    int numComputers, yourNum;
 
+    printf("How many computers will be running this program?\n");
+    scanf("%d", &numComputers);
+    printf("What number are you? 0 through numComputers-1\n");
+    scanf("%d", &yourNum);
+
+    getKeyRange(numComputers, yourNum);
+
+    uint64_t knownPlainText =     0b1100000111101100001000101101101101001110101111100000;
+    uint64_t matchingCipherText = 0b000000110011101110100010100000101000111100110001001110000100;
+
+    int decryptedCipherText = decrypt(matchingCipherText);
+
+    printf("kpt %llu \nmct %llu \ndct %llu", (unsigned long long) knownPlainText, (unsigned long long) matchingCipherText, (unsigned long long)decryptedCipherText);
 }
 
 // Given the number of computers running the program and which number you are,
 // assigns the most appropriate range of keys that you should try.
-void getKeyRange(uint64_t numComputers, uint64_t yourNum)
+void getKeyRange(int numComputers, int yourNum)
 {
-
+    endKey = endKey / numComputers;
+    startKey = endKey * yourNum;
+    endKey = startKey + endKey;
 }
 
 // Starts the decryption process on the given text.
 uint64_t decrypt(uint64_t text)
 {
+    uint32_t rightHalf;
+    uint32_t leftHalf;
+    int round;
+
+    text = permute(text, IP);
+
+    for(round = 0; round < 16; round++);
 
 }
 
@@ -65,7 +89,7 @@ uint64_t switchHalves(uint64_t text)
 }
 
 // Generates an array of all the 48 bit roundKeys from the given key.
-uint48_t* roundKeys(uint64_t key)
+uint64_t* roundKeys(uint64_t key)
 {
 
 }
