@@ -1,4 +1,3 @@
-
 // Arup Guha
 // 11/7/06
 // Solution for CIS 3362 DES Project
@@ -69,9 +68,8 @@ public class DES {
 		for (int i=0; i<32; i++)
 			P[i] = fin.nextInt();
 
-		// Reads in the 8 S-boxes!
+		// Reads in the 8 S-boxes
 		for (int i=0; i<8; i++) {
-
 			for (int j=0; j<64; j++) {
 				stables[i][j/16][j%16] = fin.nextInt();
 			}
