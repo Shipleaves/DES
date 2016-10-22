@@ -133,16 +133,12 @@ void printInBinary(uint64_t, int);
 // with the known plaintext.
 int main()
 {
-    uint64_t* test;
-    uint64_t testKey = 0b11110000110011001010101011110101010101100110011110001111;
-    test = keySchedule(testKey);
-    getchar();
     // The program will try all keys between these these two (and including them).
     // We reassign them based on how many other computers we plan to have
     // running this program.
     // endKey is 56 bits because we leave out the parity bits, so theres 8 less
     // bits to generate.
-    uint64_t startKey = 0;
+    uint64_t startKey = 0b00010010011010010101101111001001101101111011011111100000;
     uint64_t endKey = 0b11111111111111111111111111111111111111111111111111111111;
     int numComputers, yourNum;
 
@@ -157,8 +153,8 @@ int main()
 
     printf("Searching the range %llu - %llu\n\n", (unsigned long long)startKey, (unsigned long long)endKey);
 
-    uint64_t knownPlainText = 0b1100000111101100001000101101101101001110101111100000;
-    uint64_t matchingCipherText = 0b000000110011101110100010100000101000111100110001001110000100;
+    uint64_t knownPlainText = 0b0000000100100011010001010110011110001001101010111100110111101111;
+    uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
     uint64_t decryptedCipherText;
     uint64_t key;
 
@@ -179,6 +175,7 @@ int main()
 
 uint64_t decrypt(uint64_t text, uint64_t key)
 {
+    printf("decrypt\n");
     // An array for the precomputed round keys.
     uint64_t* roundKey = keySchedule(key);
 
@@ -187,7 +184,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     uint64_t right = 0b0000000000000000000000000000000011111111111111111111111111111111;
     uint32_t leftHalf;
     uint32_t temp;
-    
+
     // The round we are currently on
     int round;
 
@@ -226,6 +223,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 // shrink the result to 32 bits with S-Boxes, and apply the P permutation.
 uint64_t feistel(uint32_t half, uint64_t roundKey)
 {
+    printf("feistel\n");
     uint64_t expandedHalf = permute(half, 32, E, 48);
     expandedHalf = expandedHalf ^ roundKey;
 
@@ -236,20 +234,20 @@ uint64_t feistel(uint32_t half, uint64_t roundKey)
 // Generates an array of all the 48 bit roundKeys from the given key.
 uint64_t* keySchedule(uint64_t key)
 {
+    printf("keySchedule\n");
     uint64_t* roundKeys;
     uint64_t permutedKey;
     uint32_t leftHalf;
     uint32_t rightHalf;
     uint64_t right = 0b00000000000000000000000000001111111111111111111111111111;
-    uint64_t mask =  0b1000000000000000000000000000;
+    uint64_t mask =  0b1100000000000000000000000000;
     int i, wrapAround;
 
     // Allocate space for our roundKeys. We need 16 blocks of 48 bits (6 bytes).
-    roundKeys = malloc(6*16);
+    roundKeys = malloc(96);
 
     // Apply the PC1 permutation and split the key into halves.
-    //permutedKey = permute(key, 56, PC1, 56);
-    permutedKey = key;
+    permutedKey = permute(key, 56, PC1, 56);
     leftHalf = permutedKey >> 28;
     rightHalf = permutedKey & right;
 
@@ -257,33 +255,34 @@ uint64_t* keySchedule(uint64_t key)
     // Apply the keyShifts and PC2 permutation.
     for(i=0; i<16; i++)
     {
-        // The bit thats pushed off the left gets wrapped around to the right.
+        // The bits that are pushed off the left get wrapped around to the right.
         wrapAround = leftHalf & mask;
-        wrapAround = wrapAround >> 27;
+        // Get the two leftmost bits, we need to shift them all the way to the
+        // right, but we don't know if there will be 1 or 2 wraparound bits.
+        // So we shift left by the number of keyShifts and then shift right
+        // by 28 bits. (Faster than shifting by 28 - keyShifts[i] ).
+        wrapAround = wrapAround << keyShifts[i];
+        wrapAround = wrapAround >> 28;
         leftHalf = leftHalf << keyShifts[i];
-        // Deletes the shifted bit.
+        // Deletes the shifted bit(s).
         leftHalf = leftHalf & right;
-        // Adds the wrapAround bit.
+        // Adds the wrapAround bit(s).
         leftHalf = leftHalf | wrapAround;
 
         wrapAround = rightHalf & mask;
-        wrapAround = wrapAround >> 27;
+        wrapAround = wrapAround << keyShifts[i];
+        wrapAround = wrapAround >> 28;
         rightHalf = rightHalf << keyShifts[i];
-        // Deletes the shifted bit.
         rightHalf = rightHalf & right;
-        // Adds the wrapAround bit.
         rightHalf = rightHalf | wrapAround;
 
         // Put the key back together so we can apply the PC2 perm.
         permutedKey = leftHalf;
         permutedKey = permutedKey << 28;
         permutedKey = permutedKey | rightHalf;
-        printInBinary(permutedKey, 56);
         roundKeys[i] = permute(permutedKey, 56, PC2, 48);
-        printInBinary(roundKeys[i], 48);
-        printf("\n");
     }
-
+    printf("endKeySched\n");
     // Return the 16 roundKeys, each one 48 bits.
     return roundKeys;
 }
@@ -292,6 +291,7 @@ uint64_t* keySchedule(uint64_t key)
 // The perm arrays refer to the leftmost bit as the 1st.
 uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 {
+    printf("permute\n");
     uint64_t ans = 0;
     uint64_t temp;
     uint64_t mask;
@@ -321,7 +321,7 @@ uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 // Applies all 8 Sboxes to the 48 bit input and returns a 32 bit output.
 uint32_t sBox(uint64_t input)
 {
-    printInBinary(input, 48);
+    printf("sBox\n");
     int i;
     uint64_t ans = 0;
     uint64_t row;
