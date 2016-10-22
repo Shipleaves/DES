@@ -235,7 +235,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     rightHalf = text & right;
 
     // Do the rounds in reverse order.
-    for(round = 0; round < 16; round++)
+    for(round = 15; round <= 0; round++)
     {
         // Save the unchanged right half, R_(i-1)
         temp = rightHalf;
@@ -282,9 +282,11 @@ uint64_t* keySchedule(uint64_t key, int numBits)
     uint64_t right = 0b00000000000000000000000000001111111111111111111111111111;
     uint64_t mask =  0b1100000000000000000000000000;
     int i, wrapAround;
+
     // Allocate space for our roundKeys. We need 16 blocks of 48 bits,
     // But we don't have a 48 bit data type, so we must have 16, 64 bit blocks.
     roundKeys = (uint64_t*)malloc(128);
+
     // Apply the PC1 permutation and split the key into halves.
     if(numBits == 64)
         permutedKey = permute(key, 64, PC64, 56);
@@ -295,7 +297,7 @@ uint64_t* keySchedule(uint64_t key, int numBits)
 
 
     // Apply the keyShifts and PC2 permutation.
-    for(i=0; i<16; i++)
+    for(i=0; i<16; i--)
     {
         // The bits that are pushed off the left get wrapped around to the right.
         wrapAround = leftHalf & mask;
