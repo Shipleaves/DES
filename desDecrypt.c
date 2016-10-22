@@ -2,11 +2,14 @@
 // DES brute force decryption
 
 /*
-This program generates every key value from 0 to 2^64 and tries to decrypt the
-given ciphertext and match it with the known plaintext.
+This program generates every key value from 0 to 2^56-1 (we don't use the
+parity bits so we don't generate them and have modified PC1 to reflect this
+change) and tries to decrypt the given ciphertext and match it with the known
+plaintext.
 It makes extensive use of the uint64_t data type which stores unsigned 64 bit
-integers. I use these to store the 64 bit key, the 64 bit sized block of text,
-and various other variables and bitmasks. Also used is the data type uint32_t.
+integers. Its used these to store the key, the 64 bit block of text, and
+various other variables and bitmasks. Also used is the data type uint32_t.
+
 This program has the ability to divide the workload and be run on several
 different computers to speed up the search time tremendously.
 This program is designed with speed in mind, as we have to try an enourmous
@@ -55,14 +58,15 @@ int P[32]=   {16,  7, 20, 21,
               19, 13, 30,  6,
               22, 11,  4, 25};
 
-int PC1[64] = {57, 49,  41, 33,  25,  17,  9,
-                1, 58,  50, 42,  34,  26, 18,
-               10,  2,  59, 51,  43,  35, 27,
-               19, 11,   3, 60,  52,  44, 36,
-               63, 55,  47, 39,  31,  23, 15,
-                7, 62,  54, 46,  38,  30, 22,
-               14,  6,  61, 53,  45,  37, 29,
-               21, 13,   5, 28,  20,  12,  4};
+// PC1 has been modified because we do not include the parity bits in our 64 bit
+// key. In fact we only generate a 56 bit key.
+int PC1[56] =  {50, 43, 36, 29, 22, 15,  8,  1,
+                51, 44, 37, 30, 23, 16,  9,  2,
+                52, 45, 38, 31, 24, 17, 10,  3,
+                53, 46, 39, 32, 56, 49, 42, 35,
+                28, 21, 14,  7, 55, 48, 41, 34,
+                27, 20, 13,  6, 54, 47, 40, 33,
+                26, 19, 12,  5, 25, 18, 11,  4};
 
 int PC2[48] = {14, 17, 11, 24,  1,  5,
                 3, 28, 15,  6, 21, 10,
@@ -122,28 +126,23 @@ uint64_t feistel(uint32_t , uint64_t);
 uint64_t* keySchedule(uint64_t);
 uint64_t permute(uint64_t , int*);
 uint64_t sBox(uint64_t);
+void printInBinary(uint64_t, int);
 
 // Generates sequential keys and tries to decrypt the cipher text and match it
 // with the known plaintext.
 int main()
 {
-    uint64_t test = 0b0000001100111011101000101000001010001111001100010011100001001101;
+    uint64_t test = 0b000000110011101110100010100000101000111100110001;
+    printInBinary(test, 48);
     uint64_t ans = sBox(test);
-    uint64_t mask = 0b1000000000000000000000000000000000000000000000000000000000000000;
-    uint64_t dig;
-    int i;
-    for(i=0; i<64; i++)
-    {
-        dig = ans&mask;
-        ans = ans<<1;
 
-        printf("%d", dig);
-    }
     // The program will try all keys between these these two (and including them).
-    // The function getKeyRange reassigns them based on how many other computers
-    // you plan to have running this program.
+    // We reassign them based on how many other computers we plan to have
+    // running this program.
+    // endKey is 56 bits because we leave out the parity bits, so theres 8 less
+    // bits to generate.
     uint64_t startKey = 0b0;
-    uint64_t endKey = 0b1111111111111111111111111111111111111111111111111111111111111111;
+    uint64_t endKey = 0b11111111111111111111111111111111111111111111111111111111;
     int numComputers, yourNum;
 
     printf("How many computers will be running this program?\n");
@@ -160,8 +159,6 @@ int main()
     uint64_t decryptedCipherText;
     uint64_t key;
 
-    //getTables();
-
     // Start guessing keys and decrypting.
     for(key = startKey; key <= endKey; key += 0b1 )
     {
@@ -172,12 +169,9 @@ int main()
             break;
     }
 
-    printf("The key I found was %llu\n"
-            "The should-be plaintext is %llu\n"
-            "The actual plaintext is %llu",
-            (unsigned long long)key,
-            (unsigned long long)decryptedCipherText,
-            (unsigned long long)knownPlainText);
+    printf("The key I found was %llu\n", (unsigned long long)key);
+    printf("The should-be plaintext is %llu\n", (unsigned long long)decryptedCipherText);
+    printf("The actual plaintext is %llu\n", (unsigned long long)knownPlainText);
 }
 
 uint64_t decrypt(uint64_t text, uint64_t key)
@@ -194,10 +188,10 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     int round;
 
     // Apply the Initial Permutation matrix.
-    text = permute(text, IPinv);
+    text = permute(text, IP);
 
     // Do the feistel rounds in reverse order.
-    for(round = 16; round > 0; round--)
+    for(round = 15; round >= 0; round--)
     {
         leftHalf = (uint32_t) text & left;
         rightHalf = (uint32_t) text & right;
@@ -210,12 +204,12 @@ uint64_t decrypt(uint64_t text, uint64_t key)
         leftHalf = temp;
     }
 
-    // Put text back together with the halves.
+    // Put the halves back together.
     text = rightHalf;
     text = text << 32;
     text = text | leftHalf;
 
-    // Apply the inverse of the Initial Permatation matrix.
+    // Apply the inverse of the Initial Permutation matrix.
     return permute(text, IPinv);
 }
 
@@ -239,24 +233,47 @@ uint64_t permute(uint64_t text, int* perm)
 }
 
 // Applies all 8 Sboxes.
-uint64_t sBox(uint64_t text)
+uint64_t sBox(uint64_t input)
 {
-    printf("%llu", (unsigned long long)text);
-    int i, row, col;
-    uint64_t ans;
+    printInBinary(input, 48);
+    int i;
+    uint64_t ans = 0b0;
+    uint64_t row = 0b0;
+    uint64_t col = 0b0;
     // Masks to get the row and col for the sBox.
-    uint64_t maskInner = 0b0111100000000000000000000000000000000000000000000000000000000000;
-    uint64_t mask64 = 0b1000000000000000000000000000000000000000000000000000000000000000;
-    uint64_t mask59 = 0b0000010000000000000000000000000000000000000000000000000000000000;
+    uint64_t maskInner = 0b011110000000000000000000000000000000000000000000;
+    uint64_t mask48 = 0b100000000000000000000000000000000000000000000000;
+    uint64_t mask43 = 0b000001000000000000000000000000000000000000000000;
 
     for(i=0; i<8; i++)
     {
-        row = ((text&mask59) >> 58) | ((text&mask64) >> 63);
-        col = (text&maskInner) >> 59;
-
-        ans =  ans | sboxes[i+1][row + col*i];
         ans = ans << 4;
+        row = ((input&mask48) >> 46) | ((input&mask43) >> 42);
+        col = (input&maskInner) >> 43;
+        input = input << 6;
+
+        printf("row %llu col %llu\n", (unsigned long long)row, (unsigned long long)col);
+        printInBinary(input, 48);
+        ans =  ans | sboxes[i][row*16 + col];
+        printInBinary(ans, 32);
     }
-    printf("%llu", (unsigned long long)ans);
+
     return ans;
+}
+
+void printInBinary(uint64_t num, int numBits)
+{
+    uint64_t mask = 0b1;
+    mask = mask << numBits-1;
+    uint64_t digit;
+    int i;
+    for(i=0; i<numBits; i++)
+    {
+        digit = num & mask;
+        digit = digit>>(numBits-1);
+        num = num<<1;
+
+        printf("%d", digit);
+    }
+    printf("\n");
 }
