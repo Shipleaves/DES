@@ -133,6 +133,10 @@ void printInBinary(uint64_t, int);
 // with the known plaintext.
 int main()
 {
+    uint64_t* test;
+    uint64_t testKey = 0b11110000110011001010101011110101010101100110011110001111;
+    test = keySchedule(testKey);
+    getchar();
     // The program will try all keys between these these two (and including them).
     // We reassign them based on how many other computers we plan to have
     // running this program.
@@ -177,12 +181,13 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 {
     // An array for the precomputed round keys.
     uint64_t* roundKey = keySchedule(key);
-    // Used for switching halves. right and left are bitmasks.
+
+    // Used for switching halves. right is a bitmask.
     uint32_t rightHalf;
     uint64_t right = 0b0000000000000000000000000000000011111111111111111111111111111111;
     uint32_t leftHalf;
-    uint64_t left =  0b1111111111111111111111111111111100000000000000000000000000000000;
     uint32_t temp;
+    
     // The round we are currently on
     int round;
 
@@ -190,8 +195,8 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     text = permute(text, 64, IP, 64);
 
     // Split the text in half, in preperation for the feistel rounds.
-    leftHalf = (uint32_t) text & left;
-    rightHalf = (uint32_t) text & right;
+    leftHalf = text >> 32;
+    rightHalf = text & right;
 
     // Do the rounds in reverse order.
     for(round = 15; round >= 0; round--)
@@ -231,7 +236,56 @@ uint64_t feistel(uint32_t half, uint64_t roundKey)
 // Generates an array of all the 48 bit roundKeys from the given key.
 uint64_t* keySchedule(uint64_t key)
 {
+    uint64_t* roundKeys;
+    uint64_t permutedKey;
+    uint32_t leftHalf;
+    uint32_t rightHalf;
+    uint64_t right = 0b00000000000000000000000000001111111111111111111111111111;
+    uint64_t mask =  0b1000000000000000000000000000;
+    int i, wrapAround;
 
+    // Allocate space for our roundKeys. We need 16 blocks of 48 bits (6 bytes).
+    roundKeys = malloc(6*16);
+
+    // Apply the PC1 permutation and split the key into halves.
+    //permutedKey = permute(key, 56, PC1, 56);
+    permutedKey = key;
+    leftHalf = permutedKey >> 28;
+    rightHalf = permutedKey & right;
+
+
+    // Apply the keyShifts and PC2 permutation.
+    for(i=0; i<16; i++)
+    {
+        // The bit thats pushed off the left gets wrapped around to the right.
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround >> 27;
+        leftHalf = leftHalf << keyShifts[i];
+        // Deletes the shifted bit.
+        leftHalf = leftHalf & right;
+        // Adds the wrapAround bit.
+        leftHalf = leftHalf | wrapAround;
+
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround >> 27;
+        rightHalf = rightHalf << keyShifts[i];
+        // Deletes the shifted bit.
+        rightHalf = rightHalf & right;
+        // Adds the wrapAround bit.
+        rightHalf = rightHalf | wrapAround;
+
+        // Put the key back together so we can apply the PC2 perm.
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        printInBinary(permutedKey, 56);
+        roundKeys[i] = permute(permutedKey, 56, PC2, 48);
+        printInBinary(roundKeys[i], 48);
+        printf("\n");
+    }
+
+    // Return the 16 roundKeys, each one 48 bits.
+    return roundKeys;
 }
 
 // Applies the permutation array to the text.
@@ -303,6 +357,8 @@ void printInBinary(uint64_t number, int numBits)
     int i;
     for(i=0; i<numBits; i++)
     {
+        if(i%6 == 0)
+            printf(" ");
         digit = num & mask;
         digit = digit>>(numBits-1);
         num = num<<1;
