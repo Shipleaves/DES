@@ -20,6 +20,7 @@ number of combinations.
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <time.h>
 
 // All of the necessary matrices and tables for DES.
 int IP[64] = {58, 50, 42, 34, 26, 18, 10, 2,
@@ -31,14 +32,15 @@ int IP[64] = {58, 50, 42, 34, 26, 18, 10, 2,
               61, 53, 45, 37, 29, 21, 13, 5,
               63, 55, 47, 39, 31, 23, 15, 7};
 
-int IPinv[64] = { 4, 11,  2, 14, 15,  0,  8, 13,
-                  3, 12,  9,  7,  5, 10,  6,  1,
-                 13,  0, 11,  7,  4,  9,  1, 10,
-                 14,  3,  5, 12,  2, 15,  8,  6,
-                  1,  4, 11, 13, 12,  3,  7, 14,
-                 10, 15,  6,  8,  0,  5,  9,  2,
-                  6, 11, 13,  8,  1,  4, 10,  7,
-                  9,  5,  0, 15, 14,  2,  3, 12};
+int IPinv[64] = {40, 8, 48, 16, 56, 24, 64, 32,
+                 39, 7, 47, 15, 55, 23, 63, 31,
+                 38, 6, 46, 14, 54, 22, 62, 30,
+                 37, 5, 45, 13, 53, 21, 61, 29,
+                 36, 4, 44, 12, 52, 20, 60, 28,
+                 35, 3, 43, 11, 51, 19, 59, 27,
+                 34, 2, 42, 10, 50, 18, 58, 26,
+                 33, 1, 41,  9, 49, 17, 57, 25};
+
 
 int E[48] = {32,  1,  2,  3,  4,  5,
               4,  5,  6,  7,  8,  9,
@@ -67,6 +69,16 @@ int PC1[56] =  {50, 43, 36, 29, 22, 15,  8,  1,
                 28, 21, 14,  7, 55, 48, 41, 34,
                 27, 20, 13,  6, 54, 47, 40, 33,
                 26, 19, 12,  5, 25, 18, 11,  4};
+
+// Original PC matrix for use with 64 bit keys.
+int PC64[56] = {57, 49, 41, 33, 25, 17,  9,
+                 1, 58, 50, 42, 34, 26, 18,
+                10,  2, 59, 51, 43, 35, 27,
+                19, 11,  3, 60, 52, 44, 36,
+                63, 55, 47, 39, 31, 23, 15,
+                 7, 62, 54, 46, 38, 30, 22,
+                14,  6, 61, 53, 45, 37, 29,
+                21, 13,  5, 28, 20, 12,  4};
 
 int PC2[48] = {14, 17, 11, 24,  1,  5,
                 3, 28, 15,  6, 21, 10,
@@ -124,10 +136,12 @@ int sboxes[8][64] = {
 // Function signatures.
 uint64_t decrypt(uint64_t, uint64_t);
 uint64_t feistel(uint32_t , uint64_t);
-uint64_t* keySchedule(uint64_t);
+uint64_t* keySchedule(uint64_t, int);
 uint64_t permute(uint64_t , int, int*, int);
 uint32_t sBox(uint64_t);
-void printInBinary(uint64_t, int);
+void printInBinary(uint64_t, int, int);
+void BinToHex(uint64_t, int);
+void BinTo64(uint64_t, int);
 
 // Generates sequential keys and tries to decrypt the cipher text and match it
 // with the known plaintext.
@@ -138,10 +152,13 @@ int main()
     // running this program.
     // endKey is 56 bits because we leave out the parity bits, so theres 8 less
     // bits to generate.
-    uint64_t startKey = 0b00010010011010010101101111001001101101111011011111100000;
-    uint64_t endKey = 0b11111111111111111111111111111111111111111111111111111111;
-    int numComputers, yourNum;
 
+    // 0E329232EA6D0D73
+    // http://page.math.tu-berlin.de/~kant/teaching/hess/krypto-ws2006/des.htm
+    uint64_t startKey = 0b0001001100110100010101110111100110011011101111000000000000000000;
+    uint64_t endKey =   0b0001001100110100010101110111100110011011101111001101111111111111;
+    int numComputers, yourNum;
+/*
     printf("How many computers will be running this program?\n");
     scanf("%d", &numComputers);
     printf("What number are you? 0 through numComputers-1\n");
@@ -150,34 +167,56 @@ int main()
     endKey = endKey / numComputers;
     startKey = endKey * yourNum;
     endKey = startKey + endKey;
-
-    printf("Searching the range %llu - %llu\n\n", (unsigned long long)startKey, (unsigned long long)endKey);
+*/
+    printf("Searching the range \n");
+    BinToHex(startKey, 64);
+    BinToHex(endKey, 64);
+    printf("\n");
 
     uint64_t knownPlainText = 0b0000000100100011010001010110011110001001101010111100110111101111;
     uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
     uint64_t decryptedCipherText;
     uint64_t key;
 
+    printf("trying decrypt\n");
+    BinToHex(matchingCipherText, 64);
+    printf("to get\n");
+    BinToHex(knownPlainText, 64);
+
+    clock_t t = clock();
     // Start guessing keys and decrypting.
     for(key = startKey; key <= endKey; key += 1 )
     {
         decryptedCipherText = decrypt(matchingCipherText, key);
 
         // Break if we have succeeded.
-        if(decryptedCipherText == knownPlainText)
+        if(decryptedCipherText == knownPlainText){
+            printf("We did it!\n");
             break;
+        }
     }
+    t = clock() - t;
+    double time_taken = ((double)t)/CLOCKS_PER_SEC;
+    unsigned long long numKeys = key - startKey;
+    printf("it took %f seconds to search %llu keys\n", time_taken, numKeys);
+    long long keysPerSec = (long long)(numKeys / time_taken);
+    printf("Thats %lli keyspersec\n\n", keysPerSec);
 
-    printf("The key I found was %llu\n", (unsigned long long)key);
-    printf("The should-be plaintext is %llu\n", (unsigned long long)decryptedCipherText);
-    printf("The actual plaintext is %llu\n", (unsigned long long)knownPlainText);
+    printf("The key I found was \n");
+    BinToHex(key+1, 64);
+    printInBinary(key+1, 64, 8);
+    printf("The plaintext should be \n");
+    BinToHex(decryptedCipherText, 64);
+    printf("The actual plaintext is \n");
+    BinToHex(knownPlainText, 64);
+    //printf("The plaintext should be %llu\n", (unsigned long long)decryptedCipherText);
+    //printf("The actual plaintext is %llu\n", (unsigned long long)knownPlainText);
 }
 
 uint64_t decrypt(uint64_t text, uint64_t key)
 {
-    printf("decrypt\n");
     // An array for the precomputed round keys.
-    uint64_t* roundKey = keySchedule(key);
+    uint64_t* roundKey = keySchedule(key, 64);
 
     // Used for switching halves. right is a bitmask.
     uint32_t rightHalf;
@@ -196,7 +235,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     rightHalf = text & right;
 
     // Do the rounds in reverse order.
-    for(round = 15; round >= 0; round--)
+    for(round = 0; round < 16; round++)
     {
         // Save the unchanged right half, R_(i-1)
         temp = rightHalf;
@@ -210,10 +249,11 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 
     // Put the halves back together with the halves in the opposite places.
     // This is deliberate.
-    text = leftHalf;
+    text = rightHalf;
     text = text << 32;
-    text = text | rightHalf;
+    text = text | leftHalf;
 
+    //uint64_t test = permute(text, 64, IPinv, 64);
     // Apply the inverse of the Initial Permutation matrix.
     return permute(text, 64, IPinv, 64);
 }
@@ -222,19 +262,19 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 // Expands the 32 bit half to 48 bits, XOR the result with the 48 bit round key,
 // shrink the result to 32 bits with S-Boxes, and apply the P permutation.
 uint64_t feistel(uint32_t half, uint64_t roundKey)
-{
-    printf("feistel\n");
+{;
     uint64_t expandedHalf = permute(half, 32, E, 48);
     expandedHalf = expandedHalf ^ roundKey;
 
     half =  sBox(expandedHalf);
-    return permute(half, 32, P, 32);
+    uint32_t temp = permute(half, 32, P, 32);
+
+    return temp;
 }
 
 // Generates an array of all the 48 bit roundKeys from the given key.
-uint64_t* keySchedule(uint64_t key)
+uint64_t* keySchedule(uint64_t key, int numBits)
 {
-    printf("keySchedule\n");
     uint64_t* roundKeys;
     uint64_t permutedKey;
     uint32_t leftHalf;
@@ -242,12 +282,14 @@ uint64_t* keySchedule(uint64_t key)
     uint64_t right = 0b00000000000000000000000000001111111111111111111111111111;
     uint64_t mask =  0b1100000000000000000000000000;
     int i, wrapAround;
-
-    // Allocate space for our roundKeys. We need 16 blocks of 48 bits (6 bytes).
-    roundKeys = malloc(96);
-
+    // Allocate space for our roundKeys. We need 16 blocks of 48 bits,
+    // But we don't have a 48 bit data type, so we must have 16, 64 bit blocks.
+    roundKeys = (uint64_t*)malloc(128);
     // Apply the PC1 permutation and split the key into halves.
-    permutedKey = permute(key, 56, PC1, 56);
+    if(numBits == 64)
+        permutedKey = permute(key, 64, PC64, 56);
+    else
+        permutedKey = permute(key, 56, PC1, 56);
     leftHalf = permutedKey >> 28;
     rightHalf = permutedKey & right;
 
@@ -282,7 +324,6 @@ uint64_t* keySchedule(uint64_t key)
         permutedKey = permutedKey | rightHalf;
         roundKeys[i] = permute(permutedKey, 56, PC2, 48);
     }
-    printf("endKeySched\n");
     // Return the 16 roundKeys, each one 48 bits.
     return roundKeys;
 }
@@ -291,7 +332,6 @@ uint64_t* keySchedule(uint64_t key)
 // The perm arrays refer to the leftmost bit as the 1st.
 uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 {
-    printf("permute\n");
     uint64_t ans = 0;
     uint64_t temp;
     uint64_t mask;
@@ -321,7 +361,6 @@ uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 // Applies all 8 Sboxes to the 48 bit input and returns a 32 bit output.
 uint32_t sBox(uint64_t input)
 {
-    printf("sBox\n");
     int i;
     uint64_t ans = 0;
     uint64_t row;
@@ -348,7 +387,7 @@ uint32_t sBox(uint64_t input)
     return ans;
 }
 
-void printInBinary(uint64_t number, int numBits)
+void printInBinary(uint64_t number, int numBits, int blockSize)
 {
     uint64_t num = number;
     uint64_t mask = 1;
@@ -357,13 +396,298 @@ void printInBinary(uint64_t number, int numBits)
     int i;
     for(i=0; i<numBits; i++)
     {
-        if(i%6 == 0)
+        if(i%blockSize == 0 && i != 0)
             printf(" ");
         digit = num & mask;
         digit = digit>>(numBits-1);
         num = num<<1;
 
         printf("%d", digit);
+    }
+    printf("\n");
+}
+
+void BinToHex(uint64_t number, int numBits)
+{
+    uint64_t num = number;
+    uint64_t mask = 0b1111;
+    uint64_t character;
+    int i;
+
+    mask = mask << (numBits-4);
+
+    for(i=0; i<numBits; i+=4)
+    {
+        character = num & mask;
+        character = character >> (numBits - (i+4));
+        mask = mask >> 4;
+        switch((int)character)
+        {
+            case 0:
+                    printf("0");
+                    break;
+            case 1:
+                    printf("1");
+                    break;
+            case 2:
+                    printf("2");
+                    break;
+            case 3:
+                    printf("3");
+                    break;
+            case 4:
+                    printf("4");
+                    break;
+            case 5:
+                    printf("5");
+                    break;
+            case 6:
+                    printf("6");
+                    break;
+            case 7:
+                    printf("7");
+                    break;
+            case 8:
+                    printf("8");
+                    break;
+            case 9:
+                    printf("9");
+                    break;
+            case 10:
+                    printf("A");
+                    break;
+            case 11:
+                    printf("B");
+                    break;
+            case 12:
+                    printf("C");
+	                break;
+            case 13:
+                    printf("D");
+				    break;
+            case 14:
+                    printf("E");
+                    break;
+            case 15:
+                    printf("F");
+					break;
+        }
+    }
+    printf("\n");
+}
+
+void BinTo64(uint64_t number, int numBits)
+{
+    uint64_t num = number;
+    uint64_t mask = 0b111111;
+    uint64_t character;
+    int i;
+
+    mask = mask << (numBits-6);
+
+    for(i=0; i<numBits; i+=6)
+    {
+        character = num & mask;
+        character = character >> (numBits - (i+6));
+        mask = mask >> 6;
+        switch((int)(character+1))
+        {
+            case 1:
+                    printf("A");
+                    break;
+            case 2:
+                    printf("B");
+                    break;
+            case 3:
+                    printf("C");
+                    break;
+            case 4:
+                    printf("D");
+                    break;
+            case 5:
+                    printf("E");
+                    break;
+            case 6:
+                    printf("F");
+                    break;
+            case 7:
+                    printf("G");
+                    break;
+            case 8:
+                    printf("H");
+                    break;
+            case 9:
+                    printf("I");
+                    break;
+            case 10:
+                    printf("J");
+                    break;
+            case 11:
+                    printf("K");
+                    break;
+            case 12:
+                    printf("L");
+	                break;
+            case 13:
+                    printf("M");
+				    break;
+            case 14:
+                    printf("N");
+                    break;
+            case 15:
+                    printf("O");
+					break;
+            case 16:
+                    printf("P");
+					break;
+            case 17:
+                    printf("Q");
+					break;
+            case 18:
+                    printf("R");
+					break;
+            case 19:
+                    printf("S");
+					break;
+            case 20:
+                    printf("T");
+					break;
+            case 21:
+                    printf("U");
+					break;
+            case 22:
+                    printf("V");
+					break;
+            case 23:
+                    printf("W");
+					break;
+            case 24:
+                    printf("X");
+					break;
+            case 25:
+                    printf("Y");
+					break;
+            case 26:
+                    printf("Z");
+					break;
+            case 27:
+                    printf("a");
+					break;
+            case 28:
+                    printf("b");
+					break;
+            case 29:
+                    printf("c");
+					break;
+            case 30:
+                    printf("d");
+					break;
+            case 31:
+                    printf("e");
+                    break;
+            case 32:
+                    printf("f");
+                    break;
+            case 33:
+                    printf("g");
+					break;
+            case 34:
+                    printf("h");
+					break;
+            case 35:
+                    printf("i");
+					break;
+            case 36:
+                    printf("j");
+					break;
+            case 37:
+                    printf("k");
+					break;
+            case 38:
+                    printf("l");
+					break;
+            case 39:
+                    printf("m");
+					break;
+            case 40:
+                    printf("n");
+					break;
+            case 41:
+                    printf("o");
+					break;
+            case 42:
+                    printf("p");
+					break;
+            case 43:
+                    printf("q");
+					break;
+            case 44:
+                    printf("r");
+					break;
+            case 45:
+                    printf("s");
+					break;
+            case 46:
+                    printf("t");
+					break;
+            case 47:
+                    printf("u");
+					break;
+            case 48:
+                    printf("v");
+					break;
+            case 49:
+                    printf("w");
+					break;
+            case 50:
+                    printf("x");
+					break;
+            case 51:
+                    printf("y");
+					break;
+            case 52:
+                    printf("z");
+					break;
+            case 53:
+                    printf("0");
+					break;
+            case 54:
+                    printf("1");
+					break;
+            case 55:
+                    printf("2");
+					break;
+            case 56:
+                    printf("3");
+					break;
+            case 57:
+                    printf("4");
+					break;
+            case 58:
+                    printf("5");
+					break;
+            case 59:
+                    printf("6");
+					break;
+            case 60:
+                    printf("7");
+					break;
+            case 61:
+                    printf("8");
+					break;
+            case 62:
+                    printf("9");
+					break;
+            case 63:
+                    printf("+");
+					break;
+            case 64:
+                    printf("/");
+                    break;
+            default:
+                    printf("invalid character\n");
+                    break;
+        }
     }
     printf("\n");
 }
