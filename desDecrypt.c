@@ -132,10 +132,6 @@ void printInBinary(uint64_t, int);
 // with the known plaintext.
 int main()
 {
-    uint64_t test = 0b000000110011101110100010100000101000111100110001;
-    printInBinary(test, 48);
-    uint64_t ans = sBox(test);
-
     // The program will try all keys between these these two (and including them).
     // We reassign them based on how many other computers we plan to have
     // running this program.
@@ -153,6 +149,8 @@ int main()
     endKey = endKey / numComputers;
     startKey = endKey * yourNum;
     endKey = startKey + endKey;
+
+    printf("Searching the range " + startKey + " - " + endKey + "\n\n");
 
     uint64_t knownPlainText = 0b1100000111101100001000101101101101001110101111100000;
     uint64_t matchingCipherText = 0b000000110011101110100010100000101000111100110001001110000100;
@@ -182,7 +180,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     uint32_t rightHalf;
     uint64_t right = 0b0000000000000000000000000000000011111111111111111111111111111111;
     uint32_t leftHalf;
-    uint64_t left = 0b1111111111111111111111111111111100000000000000000000000000000000;
+    uint64_t left =  0b1111111111111111111111111111111100000000000000000000000000000000;
     uint32_t temp;
     // The round we are currently on
     int round;
@@ -190,11 +188,14 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     // Apply the Initial Permutation matrix.
     text = permute(text, IP);
 
-    // Do the feistel rounds in reverse order.
+    // Split the text in half, in preperation for the feistel rounds.
+    leftHalf = (uint32_t) text & left;
+    rightHalf = (uint32_t) text & right;
+
+    // Do the rounds in reverse order.
     for(round = 15; round >= 0; round--)
     {
-        leftHalf = (uint32_t) text & left;
-        rightHalf = (uint32_t) text & right;
+        // Save the unchanged right half, R_(i-1)
         temp = rightHalf;
 
         // XOR the left half with the output of the Feistel function.
@@ -204,10 +205,11 @@ uint64_t decrypt(uint64_t text, uint64_t key)
         leftHalf = temp;
     }
 
-    // Put the halves back together.
-    text = rightHalf;
+    // Put the halves back together with the halves in the opposite places.
+    // This is deliberate.
+    text = leftHalf;
     text = text << 32;
-    text = text | leftHalf;
+    text = text | rightHalf;
 
     // Apply the inverse of the Initial Permutation matrix.
     return permute(text, IPinv);
