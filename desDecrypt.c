@@ -121,11 +121,12 @@ int sboxes[8][64] = {
 			   2,  1, 14,  7,  4, 10,  8, 13, 15, 12,  9,  0,  3,  5,  6, 11}
                      };
 
+// Function signatures.
 uint64_t decrypt(uint64_t, uint64_t);
 uint64_t feistel(uint32_t , uint64_t);
 uint64_t* keySchedule(uint64_t);
-uint64_t permute(uint64_t , int*);
-uint64_t sBox(uint64_t);
+uint64_t permute(uint64_t , int, int*, int);
+uint32_t sBox(uint64_t);
 void printInBinary(uint64_t, int);
 
 // Generates sequential keys and tries to decrypt the cipher text and match it
@@ -137,7 +138,7 @@ int main()
     // running this program.
     // endKey is 56 bits because we leave out the parity bits, so theres 8 less
     // bits to generate.
-    uint64_t startKey = 0b0;
+    uint64_t startKey = 0;
     uint64_t endKey = 0b11111111111111111111111111111111111111111111111111111111;
     int numComputers, yourNum;
 
@@ -150,7 +151,7 @@ int main()
     startKey = endKey * yourNum;
     endKey = startKey + endKey;
 
-    printf("Searching the range " + startKey + " - " + endKey + "\n\n");
+    printf("Searching the range %llu - %llu\n\n", (unsigned long long)startKey, (unsigned long long)endKey);
 
     uint64_t knownPlainText = 0b1100000111101100001000101101101101001110101111100000;
     uint64_t matchingCipherText = 0b000000110011101110100010100000101000111100110001001110000100;
@@ -158,7 +159,7 @@ int main()
     uint64_t key;
 
     // Start guessing keys and decrypting.
-    for(key = startKey; key <= endKey; key += 0b1 )
+    for(key = startKey; key <= endKey; key += 1 )
     {
         decryptedCipherText = decrypt(matchingCipherText, key);
 
@@ -186,7 +187,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     int round;
 
     // Apply the Initial Permutation matrix.
-    text = permute(text, IP);
+    text = permute(text, 64, IP, 64);
 
     // Split the text in half, in preperation for the feistel rounds.
     leftHalf = (uint32_t) text & left;
@@ -212,14 +213,19 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     text = text | rightHalf;
 
     // Apply the inverse of the Initial Permutation matrix.
-    return permute(text, IPinv);
+    return permute(text, 64, IPinv, 64);
 }
 
-// The Feistel function. Expands the 32 bit half to 48 bits, XOR the result with
-// the 48 bit round key, send the result throught the appropriate S-Box.
+// The Feistel function.
+// Expands the 32 bit half to 48 bits, XOR the result with the 48 bit round key,
+// shrink the result to 32 bits with S-Boxes, and apply the P permutation.
 uint64_t feistel(uint32_t half, uint64_t roundKey)
 {
+    uint64_t expandedHalf = permute(half, 32, E, 48);
+    expandedHalf = expandedHalf ^ roundKey;
 
+    half =  sBox(expandedHalf);
+    return permute(half, 32, P, 32);
 }
 
 // Generates an array of all the 48 bit roundKeys from the given key.
@@ -228,44 +234,70 @@ uint64_t* keySchedule(uint64_t key)
 
 }
 
-// Applies the passed permutation array to the text.
-uint64_t permute(uint64_t text, int* perm)
+// Applies the permutation array to the text.
+// The perm arrays refer to the leftmost bit as the 1st.
+uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 {
-
-}
-
-// Applies all 8 Sboxes.
-uint64_t sBox(uint64_t input)
-{
-    printInBinary(input, 48);
+    uint64_t ans = 0;
+    uint64_t temp;
+    uint64_t mask;
     int i;
-    uint64_t ans = 0b0;
-    uint64_t row = 0b0;
-    uint64_t col = 0b0;
-    // Masks to get the row and col for the sBox.
-    uint64_t maskInner = 0b011110000000000000000000000000000000000000000000;
-    uint64_t mask48 = 0b100000000000000000000000000000000000000000000000;
-    uint64_t mask43 = 0b000001000000000000000000000000000000000000000000;
 
-    for(i=0; i<8; i++)
+    for(i=0; i<lenOfPerm; i++)
     {
-        ans = ans << 4;
-        row = ((input&mask48) >> 46) | ((input&mask43) >> 42);
-        col = (input&maskInner) >> 43;
-        input = input << 6;
+        // Shift answer so the new bit has somewhere to go.
+        ans = ans << 1;
+        mask = 1;
+        // This step is necessary because the 1st bit is the leftmost.
+        mask = mask << (sizeOfText-1);
 
-        printf("row %llu col %llu\n", (unsigned long long)row, (unsigned long long)col);
-        printInBinary(input, 48);
-        ans =  ans | sboxes[i][row*16 + col];
-        printInBinary(ans, 32);
+        // Get the perm[i]th bit from ans
+        mask = mask >> (perm[i]-1);
+        temp = (text & mask);
+
+        // Shift temp so the bit is at the rightmost position.
+        // Add it to the end of ans.
+        temp = temp >> (sizeOfText - perm[i]);
+        ans = ans | temp;
     }
 
     return ans;
 }
 
-void printInBinary(uint64_t num, int numBits)
+// Applies all 8 Sboxes to the 48 bit input and returns a 32 bit output.
+uint32_t sBox(uint64_t input)
 {
-    uint64_t mask = 0b1;
+    printInBinary(input, 48);
+    int i;
+    uint64_t ans = 0;
+    uint64_t row;
+    uint64_t col;
+    // Masks to get the row and col for the sBox.
+    uint64_t maskInner = 0b011110000000000000000000000000000000000000000000;
+    uint64_t mask48 =    0b100000000000000000000000000000000000000000000000;
+    uint64_t mask43 =    0b000001000000000000000000000000000000000000000000;
+
+    for(i=0; i<8; i++)
+    {
+        // Shift the answer so we're ready to store the next 4 bits.
+        ans = ans << 4;
+
+        // Get row and column and then shift input so it's ready for next time.
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+
+        // Add the 4 bit number from sboxes to ans.
+        ans =  ans | sboxes[i][row*16 + col];
+    }
+
+    return ans;
+}
+
+void printInBinary(uint64_t number, int numBits)
+{
+    uint64_t num = number;
+    uint64_t mask = 1;
     mask = mask << numBits-1;
     uint64_t digit;
     int i;
