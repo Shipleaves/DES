@@ -2,13 +2,13 @@
 // DES brute force decryption
 
 /*
-This program generates every key value from 0 to 2^56-1 (we don't use the
-parity bits so we don't generate them and have modified PC1 to reflect this
-change) and tries to decrypt the given ciphertext and match it with the known
-plaintext.
+This program generates every key value from 0 to 2^37-1 and uses some rules
+given by the instructor to expand the key to 56 bits and tries to decrypt the
+ given ciphertext and match it with the known plaintext.
+
 It makes extensive use of the uint64_t data type which stores unsigned 64 bit
 integers. Its used these to store the key, the 64 bit block of text, and
-various other variables and bitmasks. Also used is the data type uint32_t.
+various other variables and bitmasks.
 
 This program has the ability to divide the workload and be run on several
 different computers to speed up the search time tremendously.
@@ -23,6 +23,8 @@ number of combinations.
 #include <time.h>
 
 // All of the necessary matrices and tables for DES.
+
+// The initial permuatation matrix, applied immediately to the input text.
 int IP[64] = {58, 50, 42, 34, 26, 18, 10, 2,
               60, 52, 44, 36, 28, 20, 12, 4,
               62, 54, 46, 38, 30, 22, 14, 6,
@@ -32,6 +34,7 @@ int IP[64] = {58, 50, 42, 34, 26, 18, 10, 2,
               61, 53, 45, 37, 29, 21, 13, 5,
               63, 55, 47, 39, 31, 23, 15, 7};
 
+// The inverse of IP matrix, applied as the very last step.
 int IPinv[64] = {40, 8, 48, 16, 56, 24, 64, 32,
                  39, 7, 47, 15, 55, 23, 63, 31,
                  38, 6, 46, 14, 54, 22, 62, 30,
@@ -41,7 +44,8 @@ int IPinv[64] = {40, 8, 48, 16, 56, 24, 64, 32,
                  34, 2, 42, 10, 50, 18, 58, 26,
                  33, 1, 41,  9, 49, 17, 57, 25};
 
-
+// The Expansion matrix. Takes a 32 bit input and expands it to be 48 bits.
+// Applied in the Feistel function.
 int E[48] = {32,  1,  2,  3,  4,  5,
               4,  5,  6,  7,  8,  9,
               8,  9, 10, 11, 12, 13,
@@ -51,6 +55,8 @@ int E[48] = {32,  1,  2,  3,  4,  5,
              24, 25, 26, 27, 28, 29,
              28, 29, 30, 31, 32,  1};
 
+// The Permute matrix. Applied as the last step of the Feistel function.
+// Shuffles around a 32 bit input.
 int P[32]=   {16,  7, 20, 21,
               29, 12, 28, 17,
                1, 15, 23, 26,
@@ -80,6 +86,7 @@ int PC64[56] = {57, 49, 41, 33, 25, 17,  9,
                 14,  6, 61, 53, 45, 37, 29,
                 21, 13,  5, 28, 20, 12,  4};
 
+// PC2 matrix used in the generation of the 48 bit roundKeys from a 56 bit key.
 int PC2[48] = {14, 17, 11, 24,  1,  5,
                 3, 28, 15,  6, 21, 10,
                23, 19, 12,  4, 26,  8,
@@ -89,8 +96,12 @@ int PC2[48] = {14, 17, 11, 24,  1,  5,
                44, 49, 39, 56, 34, 53,
                46, 42, 50, 36, 29, 32};
 
+// We shift the left and right halves of the key between every round when
+// generating the roundKeys.
 int keyShifts[16] = {1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1};
 
+// 8 different S-boxes, takes a 48 bit input and shrinks it to 32 bits.
+// Used in the Feistel function.
 int sboxes[8][64] = {
             {14,  4, 13,  1,  2, 15, 11,  8,  3, 10,  6, 12,  5,  9,  0,  7,
 			  0, 15,  7,  4, 14,  2, 13,  1, 10,  6, 12, 11,  9,  5,  3,  8,
@@ -134,14 +145,15 @@ int sboxes[8][64] = {
                      };
 
 // Function signatures.
-uint64_t decrypt(uint64_t, uint64_t);
-uint64_t feistel(uint32_t , uint64_t);
-uint64_t* keySchedule(uint64_t, int);
-uint64_t permute(uint64_t , int, int*, int);
-uint32_t sBox(uint64_t);
-void printInBinary(uint64_t, int, int);
-void BinToHex(uint64_t, int);
-void BinTo64(uint64_t, int);
+uint64_t generateKey(uint64_t key);
+uint64_t decrypt(uint64_t input, uint64_t key);
+uint64_t feistel(uint32_t half, uint64_t roundKey);
+uint64_t* keySchedule(uint64_t key);
+uint64_t permute(uint64_t input, int sizeOfInput, int* perm, int lenOfPerm);
+uint32_t sBox(uint64_t input);
+void printInBinary(uint64_t number, int numBits, int blockSize);
+void BinToHex(uint64_t number, int numBits);
+void BinTo64(uint64_t number, int numBits);
 
 // Generates sequential keys and tries to decrypt the cipher text and match it
 // with the known plaintext.
@@ -152,44 +164,58 @@ int main()
     // running this program.
     // endKey is 56 bits because we leave out the parity bits, so theres 8 less
     // bits to generate.
-    // Keys for testing, takes about 20 seconds to run.
-    //uint64_t startKey = 0b00010010011010010101101111001001101100000000000000000000;
-    //uint64_t endKey =   0b00010010011010010101101111001001101101111011011111111111;
-    uint64_t startKey = 0;
-    uint64_t endKey =   0b11111111111111111111111111111111111111111111111111111111;
+
+    // Keys for testing, searches 3651576 keys. Takes between 20 seconds to a
+    // couple minutes.
+    uint64_t startKey = 0b00010010011010010101101111001001100000000000000000000000;
+    uint64_t endKey =   0b00010010011010010101101111001001101101111011011111111111;
+
+    // The real keys that we must generate.
+    // We only have to generate 37 bits because the assignment has a restricted
+    // key space.
+    //uint64_t startKey = 0;
+    //uint64_t endKey =   0b1111111111111111111111111111111111111;
+
     uint64_t range = startKey - endKey;
-    int numComputers, yourNum;
-    FILE* out;
+    int numComputers, yourNum, multiplier;
+    FILE *out, *keylog;
 
     out = fopen("output.txt", "w");
-
+    keylog = fopen("keylog.txt", "w");
+/*
     printf("How many computers will be running this program?\n");
     scanf("%d", &numComputers);
     printf("What number are you? 0 through numComputers-1\n");
     scanf("%d", &yourNum);
+    printf("Is your computer super fast? Want an extra challenge? ");
+    printf("Enter a number to multiply your search space! Or enter 1 to keep ");
+    printf("the normal sized search space.\n");
+    scanf("%d", &multiplier);
 
     range = endKey / numComputers;
     startKey = range * yourNum;
-    endKey = startKey + range;
-
+    endKey = startKey + range*multiplier;
+*/
     printf("Searching the range \n");
     BinToHex(startKey, 64);
     BinToHex(endKey, 64);
     printf("\n");
 
     // text for testing, matches the key from above.
-    //uint64_t knownPlainText =     0b0000000100100011010001010110011110001001101010111100110111101111;
-    //uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
+    uint64_t knownPlainText =     0b0000000100100011010001010110011110001001101010111100110111101111;
+    uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
+
     // plaintext in radix64 wewin2016+ plus the four 0's for padding.
     // cipher text in radix64 Azuigo8gxOE minus the two 0's that were padded on.
-    uint64_t knownPlainText =     0b1100000111101100001000101001111101101101001101011110101111100000;
-    uint64_t matchingCipherText = 0b0000001100111011101000101000001010001111001000001100010011100001;
+    //uint64_t knownPlainText =     0b1100000111101100001000101001111101101101001101011110101111100000;
+    //uint64_t matchingCipherText = 0b0000001100111011101000101000001010001111001000001100010011100001;
+
     uint64_t decryptedCipherText = 0;
     uint64_t key = 0;
 
-    printf("trying decrypt\n");
+    printf("trying to decrypt\n");
     BinTo64(matchingCipherText, 64);
-    printf("to get\n");
+    printf("and have it match\n");
     BinTo64(knownPlainText, 64);
     printf("\n\n");
 
@@ -197,7 +223,15 @@ int main()
     // Start guessing keys and decrypting.
     for(key = startKey; key <= endKey; key++ )
     {
+        // Generate the 56 bit given given 37 bits using the restrictions that
+        // have been placed on the key space.
+        key = generateKey(key);
         decryptedCipherText = decrypt(matchingCipherText, key);
+
+        // Print every 100,000,000,000th key. In case of computer crashes
+        // or errors we have some kind of start over point.
+        if(key%100000000000 == 0)
+            fprintf(keylog, "%llu\n", (unsigned long long)key);
 
         // Break if we have succeeded.
         if(decryptedCipherText == knownPlainText){
@@ -215,21 +249,39 @@ int main()
     fprintf(out, "It took %lf seconds to search %llu keys\n", time_taken, numKeys);
     fprintf(out, "Thats %lf keyspersec\n\n", keysPerSec);
 
+    fclose(out);
+    fclose(keylog);
+
     printf("The key I found was \n");
-    BinToHex(key+1, 56);
-    printInBinary(key+1, 56, 8);
-    printf("\n");
-    printf("What I found the plaintext to be \n");
+    BinToHex(key, 56);
+    printInBinary(key, 56, 8);
+
+    printf("\nWhat I found the plaintext to be \n");
     BinToHex(decryptedCipherText, 64);
     printf("What the plaintext is supposed to be \n");
     BinToHex(knownPlainText, 64);
+
+    return 0;
 }
 
-uint64_t decrypt(uint64_t text, uint64_t key)
+// Takes baseKey, a 37 bit number, and uses the rules supplied in the assignment
+// to expand it to 64 bits. I've modified the rules to not include parity bits.
+// The rules are ki = k28+i for the following values of i: 1 – 5, 9 – 13,
+// 17 – 21, and 25 – 29.
+uint64_t generateKey(uint64_t baseKey)
 {
-    //printf("decrypt\n");
+    uint64_t key = 0;
+    uint64_t mask = 1111100000000000000000000000000000000;
+    uint64_t temp = 0;
+
+    temp = baseKey & mask;
+    mask = mask >> 4;
+}
+
+uint64_t decrypt(uint64_t input, uint64_t key)
+{
     // An array for the precomputed round keys, pass the key and numBits in key.
-    uint64_t* roundKey = keySchedule(key, 56);
+    uint64_t* roundKey = keySchedule(key);
 
     // Used for switching halves. right is a bitmask.
     uint32_t rightHalf = 0;
@@ -241,36 +293,96 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     int round = 0;
 
     // Apply the Initial Permutation matrix.
-    text = permute(text, 64, IP, 64);
+    input = permute(input, 64, IP, 64);
 
-    // Split the text in half, in preperation for the feistel rounds.
-    leftHalf = text >> 32;
-    rightHalf = text & right;
+    // Split the input in half, in preperation for the feistel rounds.
+    leftHalf = input >> 32;
+    rightHalf = input & right;
 
     // Do the rounds in reverse order.
-    for(round = 15; round >= 0; round--)
-    {
+    // Unrolled this loop for(round = 15; round >= 0; round--)
+
         // Save the unchanged right half, R_(i-1)
         temp = rightHalf;
 
         // XOR the left half with the output of the Feistel function.
         // Go ahead and switch the halves by assiging this to the rightHalf
         // and assigning temp to leftHalf.
-        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[round]);
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[15]);
         leftHalf = temp;
-    }
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[14]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[13]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[12]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[11]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[10]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[9]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[8]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[7]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[6]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[5]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[4]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[3]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[2]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[1]);
+        leftHalf = temp;
+
+        temp = rightHalf;
+        rightHalf = leftHalf ^ feistel(rightHalf, roundKey[0]);
+        leftHalf = temp;
+
 
     // Put the halves back together with the halves in the opposite places.
-    // This is deliberate.
-    text = rightHalf;
-    text = text << 32;
-    text = text | leftHalf;
+    // This is deliberate and necessary.
+    input = rightHalf;
+    input = input << 32;
+    input = input | leftHalf;
 
     // Free the roundKey pointer, it was malloc'd in the keySchedule function.
     free(roundKey);
 
     // Apply the inverse of the Initial Permutation matrix.
-    return permute(text, 64, IPinv, 64);
+    return permute(input, 64, IPinv, 64);
 }
 
 // The Feistel function.
@@ -278,7 +390,6 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 // shrink the result to 32 bits with S-Boxes, and apply the P permutation.
 uint64_t feistel(uint32_t half, uint64_t roundKey)
 {
-    //printf("feistel\n");
     uint64_t expandedHalf = permute(half, 32, E, 48);
     expandedHalf = expandedHalf ^ roundKey;
     half =  sBox(expandedHalf);
@@ -287,9 +398,8 @@ uint64_t feistel(uint32_t half, uint64_t roundKey)
 }
 
 // Generates an array of all the 48 bit roundKeys from the given key.
-uint64_t* keySchedule(uint64_t key, int numBits)
+uint64_t* keySchedule(uint64_t key)
 {
-    //printf("keySchedule\n");
     uint64_t* roundKeys;
     uint64_t permutedKey = 0;
     uint32_t leftHalf = 0;
@@ -303,54 +413,308 @@ uint64_t* keySchedule(uint64_t key, int numBits)
     roundKeys = (uint64_t*)malloc(128);
 
     // Apply the PC1 permutation and split the key into halves.
-    if(numBits == 64)
-        permutedKey = permute(key, 64, PC64, 56);
-    else
-        permutedKey = permute(key, 56, PC1, 56);
+    permutedKey = permute(key, 56, PC1, 56);
 
     leftHalf = permutedKey >> 28;
     rightHalf = permutedKey & right;
 
 
     // Apply the keyShifts and PC2 permutation.
-    for(i=0; i<16; i++)
-    {
+    // Unrolled this loop for(i=0; i<16; i++)
+
         // The bits that are pushed off the left get wrapped around to the right.
         wrapAround = leftHalf & mask;
         // Get the two leftmost bits, we need to shift them all the way to the
         // right, but we don't know if there will be 1 or 2 wraparound bits.
         // So we shift left by the number of keyShifts and then shift right
-        // by 28 bits. (Faster than shifting by 28 - keyShifts[i] ).
-        wrapAround = wrapAround << keyShifts[i];
+        // by 28 bits. (Faster than shifting by 28 - keyShifts[i]).
+        wrapAround = wrapAround << keyShifts[0];
         wrapAround = wrapAround >> 28;
-        leftHalf = leftHalf << keyShifts[i];
+        leftHalf = leftHalf << keyShifts[0];
         // Deletes the shifted bit(s).
         leftHalf = leftHalf & right;
         // Adds the wrapAround bit(s).
         leftHalf = leftHalf | wrapAround;
 
+        // Similarly for the rightHalf.
         wrapAround = rightHalf & mask;
-        wrapAround = wrapAround << keyShifts[i];
+        wrapAround = wrapAround << keyShifts[0];
         wrapAround = wrapAround >> 28;
-        rightHalf = rightHalf << keyShifts[i];
+        rightHalf = rightHalf << keyShifts[0];
         rightHalf = rightHalf & right;
         rightHalf = rightHalf | wrapAround;
 
-        // Put the key back together so we can apply the PC2 perm.
         permutedKey = leftHalf;
         permutedKey = permutedKey << 28;
         permutedKey = permutedKey | rightHalf;
-        roundKeys[i] = permute(permutedKey, 56, PC2, 48);
-    }
+        roundKeys[0] = permute(permutedKey, 56, PC2, 48);
+        // end first iteration.
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[1];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[1];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[1];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[1];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[1] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[2];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[2];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[2];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[2];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[2] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[3];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[3];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[3];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[3];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[3] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[4];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[4];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[4];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[4];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[4] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[5];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[5];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[5];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[5];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[5] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[6];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[6];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[6];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[6];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[6] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[7];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[7];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[7];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[7];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[7] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[8];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[8];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[8];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[8];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[8] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[9];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[9];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[9];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[9];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[9] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[10];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[10];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[10];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[10];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[10] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[11];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[11];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[11];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[11];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[11] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[12];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[12];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[12];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[12];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[12] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[13];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[13];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[13];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[13];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[13] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[14];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[14];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[14];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[14];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[14] = permute(permutedKey, 56, PC2, 48);
+
+        wrapAround = leftHalf & mask;
+        wrapAround = wrapAround << keyShifts[15];
+        wrapAround = wrapAround >> 28;
+        leftHalf = leftHalf << keyShifts[15];
+        leftHalf = leftHalf & right;
+        leftHalf = leftHalf | wrapAround;
+        wrapAround = rightHalf & mask;
+        wrapAround = wrapAround << keyShifts[15];
+        wrapAround = wrapAround >> 28;
+        rightHalf = rightHalf << keyShifts[15];
+        rightHalf = rightHalf & right;
+        rightHalf = rightHalf | wrapAround;
+        permutedKey = leftHalf;
+        permutedKey = permutedKey << 28;
+        permutedKey = permutedKey | rightHalf;
+        roundKeys[15] = permute(permutedKey, 56, PC2, 48);
+        // end for loop
+
     // Return the 16 roundKeys, each one 48 bits.
     return roundKeys;
 }
 
-// Applies the permutation array to the text.
+// Applies the permutation array to the input. Used for applying the IP, IPinv,
+// E, and P permutations.
 // The perm arrays refer to the leftmost bit as the 1st.
-uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
+uint64_t permute(uint64_t input, int sizeOfInput, int* perm, int lenOfPerm)
 {
-    //printf("permute\n");
     uint64_t ans = 0;
     uint64_t temp = 0;
     uint64_t mask = 0;
@@ -362,15 +726,15 @@ uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
         ans = ans << 1;
         mask = 1;
         // This step is necessary because the 1st bit is the leftmost.
-        mask = mask << (sizeOfText-1);
+        mask = mask << (sizeOfInput-1);
 
         // Get the perm[i]th bit from ans
         mask = mask >> (perm[i]-1);
-        temp = (text & mask);
+        temp = (input & mask);
 
         // Shift temp so the bit is at the rightmost position.
         // Add it to the end of ans.
-        temp = temp >> (sizeOfText - perm[i]);
+        temp = temp >> (sizeOfInput - perm[i]);
         ans = ans | temp;
     }
 
@@ -380,7 +744,6 @@ uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 // Applies all 8 Sboxes to the 48 bit input and returns a 32 bit output.
 uint32_t sBox(uint64_t input)
 {
-    //printf("sbox\n");
     uint64_t ans = 0;
     uint64_t row = 0;
     uint64_t col = 0;
@@ -390,10 +753,7 @@ uint32_t sBox(uint64_t input)
     uint64_t mask43 =    0b000001000000000000000000000000000000000000000000;
     int i = 0;
 
-    for(i=0; i<8; i++)
-    {
-        // Shift the answer so we're ready to store the next 4 bits.
-        ans = ans << 4;
+    // Unrolled this loop for(i=0; i<8; i++)
 
         // Get row and column and then shift input so it's ready for next time.
         row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
@@ -401,12 +761,59 @@ uint32_t sBox(uint64_t input)
         input = input << 6;
 
         // Add the 4 bit number from sboxes to ans.
-        ans =  ans | sboxes[i][row*16 + col];
-    }
+        ans =  ans | sboxes[0][row*16 + col];
+        // end first iteration.
+
+        // Shift the answer so we're ready to store the next 4 bits.
+        // We didn't need to do it on the first iteration.
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+        ans =  ans | sboxes[1][row*16 + col];
+
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+        ans =  ans | sboxes[2][row*16 + col];
+
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+        ans =  ans | sboxes[3][row*16 + col];
+
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+        ans =  ans | sboxes[4][row*16 + col];
+
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+        ans =  ans | sboxes[5][row*16 + col];
+
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        input = input << 6;
+        ans =  ans | sboxes[6][row*16 + col];
+
+        // and we don't need to shift input on the last iteration.
+        ans = ans << 4;
+        row = ((input & mask48) >> 46) | ((input & mask43) >> 42);
+        col = (input & maskInner) >> 43;
+        ans =  ans | sboxes[7][row*16 + col];
+        // end for loop.
 
     return ans;
 }
 
+// Prints the given number in binary, adds spaces to break the output up into
+// blocks of blockSize.
 void printInBinary(uint64_t number, int numBits, int blockSize)
 {
     uint64_t num = number;
@@ -428,6 +835,8 @@ void printInBinary(uint64_t number, int numBits, int blockSize)
     printf("\n");
 }
 
+// Print the number in hexadecimal, numBits must be a multiple of 4 or the last
+// char will be inaccurate.
 void BinToHex(uint64_t number, int numBits)
 {
     uint64_t num = number;
@@ -497,6 +906,8 @@ void BinToHex(uint64_t number, int numBits)
     printf("\n");
 }
 
+// Print the number in base64. Inputs must be a multiple of 6 or the last char
+// will be inaccurate.
 void BinTo64(uint64_t number, int numBits)
 {
     uint64_t num = number;
