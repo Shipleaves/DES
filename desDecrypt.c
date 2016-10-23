@@ -153,12 +153,13 @@ int main()
     // endKey is 56 bits because we leave out the parity bits, so theres 8 less
     // bits to generate.
 
-    // 0E329232EA6D0D73
+    // 133457799BBCDFF1
     // http://page.math.tu-berlin.de/~kant/teaching/hess/krypto-ws2006/des.htm
-    uint64_t startKey = 0b0001001100110100010101110111100110011011101111000000000000000000;
-    uint64_t endKey =   0b0001001100110100010101110111100110011011101111001101111111111111;
+    // The actual key 0001001100110100010101110111100110011011101111001101111111110001
+    uint64_t startKey = 0b0;
+    uint64_t endKey =   0b11111111111111111111111111111111111111111111111111111111;
     int numComputers, yourNum;
-/*
+
     printf("How many computers will be running this program?\n");
     scanf("%d", &numComputers);
     printf("What number are you? 0 through numComputers-1\n");
@@ -167,14 +168,16 @@ int main()
     endKey = endKey / numComputers;
     startKey = endKey * yourNum;
     endKey = startKey + endKey;
-*/
+
     printf("Searching the range \n");
     BinToHex(startKey, 64);
     BinToHex(endKey, 64);
     printf("\n");
 
-    uint64_t knownPlainText = 0b0000000100100011010001010110011110001001101010111100110111101111;
-    uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
+    // plaintext in radix64 wewin2016+ plus the four 0's for padding.
+    // cipher text in radix64 Azuigo8gxOE minus the two 0's that were padded on.
+    uint64_t knownPlainText =     0b1100000111101100001000101001111101101101001101011110101111100000;
+    uint64_t matchingCipherText = 0b0000001100111011101000101000001010001111001000001100010011100001;
     uint64_t decryptedCipherText;
     uint64_t key;
 
@@ -185,7 +188,7 @@ int main()
 
     clock_t t = clock();
     // Start guessing keys and decrypting.
-    for(key = startKey; key <= endKey; key += 1 )
+    for(key = startKey; key <= endKey; key++ )
     {
         decryptedCipherText = decrypt(matchingCipherText, key);
 
@@ -196,6 +199,7 @@ int main()
         }
     }
     t = clock() - t;
+
     double time_taken = ((double)t)/CLOCKS_PER_SEC;
     unsigned long long numKeys = key - startKey;
     printf("it took %f seconds to search %llu keys\n", time_taken, numKeys);
@@ -203,8 +207,8 @@ int main()
     printf("Thats %lli keyspersec\n\n", keysPerSec);
 
     printf("The key I found was \n");
-    BinToHex(key+1, 64);
-    printInBinary(key+1, 64, 8);
+    BinToHex(key+1, 56);
+    printInBinary(key+1, 56, 8);
     printf("The plaintext should be \n");
     BinToHex(decryptedCipherText, 64);
     printf("The actual plaintext is \n");
@@ -216,7 +220,7 @@ int main()
 uint64_t decrypt(uint64_t text, uint64_t key)
 {
     // An array for the precomputed round keys.
-    uint64_t* roundKey = keySchedule(key, 64);
+    uint64_t* roundKey = keySchedule(key, 56);
 
     // Used for switching halves. right is a bitmask.
     uint32_t rightHalf;
@@ -235,7 +239,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
     rightHalf = text & right;
 
     // Do the rounds in reverse order.
-    for(round = 15; round <= 0; round++)
+    for(round = 15; round >= 0; round--)
     {
         // Save the unchanged right half, R_(i-1)
         temp = rightHalf;
@@ -246,6 +250,9 @@ uint64_t decrypt(uint64_t text, uint64_t key)
         rightHalf = leftHalf ^ feistel(rightHalf, roundKey[round]);
         leftHalf = temp;
     }
+
+    // Free the roundKey pointer, it was malloc'd in the keySchedule function.
+    free(roundKey);
 
     // Put the halves back together with the halves in the opposite places.
     // This is deliberate.
@@ -262,7 +269,7 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 // Expands the 32 bit half to 48 bits, XOR the result with the 48 bit round key,
 // shrink the result to 32 bits with S-Boxes, and apply the P permutation.
 uint64_t feistel(uint32_t half, uint64_t roundKey)
-{;
+{
     uint64_t expandedHalf = permute(half, 32, E, 48);
     expandedHalf = expandedHalf ^ roundKey;
 
@@ -292,12 +299,13 @@ uint64_t* keySchedule(uint64_t key, int numBits)
         permutedKey = permute(key, 64, PC64, 56);
     else
         permutedKey = permute(key, 56, PC1, 56);
+
     leftHalf = permutedKey >> 28;
     rightHalf = permutedKey & right;
 
 
     // Apply the keyShifts and PC2 permutation.
-    for(i=0; i<16; i--)
+    for(i=0; i<16; i++)
     {
         // The bits that are pushed off the left get wrapped around to the right.
         wrapAround = leftHalf & mask;
@@ -404,7 +412,7 @@ void printInBinary(uint64_t number, int numBits, int blockSize)
         digit = digit>>(numBits-1);
         num = num<<1;
 
-        printf("%d", digit);
+        printf("%llu", (unsigned long long)digit);
     }
     printf("\n");
 }
