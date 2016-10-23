@@ -152,39 +152,46 @@ int main()
     // running this program.
     // endKey is 56 bits because we leave out the parity bits, so theres 8 less
     // bits to generate.
-
-    // 133457799BBCDFF1
-    // http://page.math.tu-berlin.de/~kant/teaching/hess/krypto-ws2006/des.htm
-    // The actual key 0001001100110100010101110111100110011011101111001101111111110001
-    uint64_t startKey = 0b0;
+    // Keys for testing, takes about 20 seconds to run.
+    //uint64_t startKey = 0b00010010011010010101101111001001101100000000000000000000;
+    //uint64_t endKey =   0b00010010011010010101101111001001101101111011011111111111;
+    uint64_t startKey = 0;
     uint64_t endKey =   0b11111111111111111111111111111111111111111111111111111111;
+    uint64_t range = startKey - endKey;
     int numComputers, yourNum;
+    FILE* out;
+
+    out = fopen("output.txt", "w");
 
     printf("How many computers will be running this program?\n");
     scanf("%d", &numComputers);
     printf("What number are you? 0 through numComputers-1\n");
     scanf("%d", &yourNum);
 
-    endKey = endKey / numComputers;
-    startKey = endKey * yourNum;
-    endKey = startKey + endKey;
+    range = endKey / numComputers;
+    startKey = range * yourNum;
+    endKey = startKey + range;
 
     printf("Searching the range \n");
     BinToHex(startKey, 64);
     BinToHex(endKey, 64);
     printf("\n");
 
+    // text for testing, matches the key from above.
+    //uint64_t knownPlainText =     0b0000000100100011010001010110011110001001101010111100110111101111;
+    //uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
     // plaintext in radix64 wewin2016+ plus the four 0's for padding.
     // cipher text in radix64 Azuigo8gxOE minus the two 0's that were padded on.
     uint64_t knownPlainText =     0b1100000111101100001000101001111101101101001101011110101111100000;
     uint64_t matchingCipherText = 0b0000001100111011101000101000001010001111001000001100010011100001;
-    uint64_t decryptedCipherText;
-    uint64_t key;
+    uint64_t decryptedCipherText = 0;
+    uint64_t key = 0;
 
     printf("trying decrypt\n");
-    BinToHex(matchingCipherText, 64);
+    BinTo64(matchingCipherText, 64);
     printf("to get\n");
-    BinToHex(knownPlainText, 64);
+    BinTo64(knownPlainText, 64);
+    printf("\n\n");
 
     clock_t t = clock();
     // Start guessing keys and decrypting.
@@ -200,36 +207,38 @@ int main()
     }
     t = clock() - t;
 
-    double time_taken = ((double)t)/CLOCKS_PER_SEC;
     unsigned long long numKeys = key - startKey;
-    printf("it took %f seconds to search %llu keys\n", time_taken, numKeys);
-    long long keysPerSec = (long long)(numKeys / time_taken);
-    printf("Thats %lli keyspersec\n\n", keysPerSec);
+    double time_taken = ((double)t) / CLOCKS_PER_SEC;
+    double keysPerSec = ((double)numKeys) / time_taken;
+
+    fprintf(out, "key %llu\n", (unsigned long long)key);
+    fprintf(out, "It took %lf seconds to search %llu keys\n", time_taken, numKeys);
+    fprintf(out, "Thats %lf keyspersec\n\n", keysPerSec);
 
     printf("The key I found was \n");
     BinToHex(key+1, 56);
     printInBinary(key+1, 56, 8);
-    printf("The plaintext should be \n");
+    printf("\n");
+    printf("What I found the plaintext to be \n");
     BinToHex(decryptedCipherText, 64);
-    printf("The actual plaintext is \n");
+    printf("What the plaintext is supposed to be \n");
     BinToHex(knownPlainText, 64);
-    //printf("The plaintext should be %llu\n", (unsigned long long)decryptedCipherText);
-    //printf("The actual plaintext is %llu\n", (unsigned long long)knownPlainText);
 }
 
 uint64_t decrypt(uint64_t text, uint64_t key)
 {
-    // An array for the precomputed round keys.
+    //printf("decrypt\n");
+    // An array for the precomputed round keys, pass the key and numBits in key.
     uint64_t* roundKey = keySchedule(key, 56);
 
     // Used for switching halves. right is a bitmask.
-    uint32_t rightHalf;
+    uint32_t rightHalf = 0;
     uint64_t right = 0b0000000000000000000000000000000011111111111111111111111111111111;
-    uint32_t leftHalf;
-    uint32_t temp;
+    uint32_t leftHalf = 0;
+    uint32_t temp = 0;
 
     // The round we are currently on
-    int round;
+    int round = 0;
 
     // Apply the Initial Permutation matrix.
     text = permute(text, 64, IP, 64);
@@ -251,16 +260,15 @@ uint64_t decrypt(uint64_t text, uint64_t key)
         leftHalf = temp;
     }
 
-    // Free the roundKey pointer, it was malloc'd in the keySchedule function.
-    free(roundKey);
-
     // Put the halves back together with the halves in the opposite places.
     // This is deliberate.
     text = rightHalf;
     text = text << 32;
     text = text | leftHalf;
 
-    //uint64_t test = permute(text, 64, IPinv, 64);
+    // Free the roundKey pointer, it was malloc'd in the keySchedule function.
+    free(roundKey);
+
     // Apply the inverse of the Initial Permutation matrix.
     return permute(text, 64, IPinv, 64);
 }
@@ -270,25 +278,25 @@ uint64_t decrypt(uint64_t text, uint64_t key)
 // shrink the result to 32 bits with S-Boxes, and apply the P permutation.
 uint64_t feistel(uint32_t half, uint64_t roundKey)
 {
+    //printf("feistel\n");
     uint64_t expandedHalf = permute(half, 32, E, 48);
     expandedHalf = expandedHalf ^ roundKey;
-
     half =  sBox(expandedHalf);
-    uint32_t temp = permute(half, 32, P, 32);
 
-    return temp;
+    return permute(half, 32, P, 32);
 }
 
 // Generates an array of all the 48 bit roundKeys from the given key.
 uint64_t* keySchedule(uint64_t key, int numBits)
 {
+    //printf("keySchedule\n");
     uint64_t* roundKeys;
-    uint64_t permutedKey;
-    uint32_t leftHalf;
-    uint32_t rightHalf;
+    uint64_t permutedKey = 0;
+    uint32_t leftHalf = 0;
+    uint32_t rightHalf = 0;
     uint64_t right = 0b00000000000000000000000000001111111111111111111111111111;
     uint64_t mask =  0b1100000000000000000000000000;
-    int i, wrapAround;
+    int i = 0, wrapAround = 0;
 
     // Allocate space for our roundKeys. We need 16 blocks of 48 bits,
     // But we don't have a 48 bit data type, so we must have 16, 64 bit blocks.
@@ -342,10 +350,11 @@ uint64_t* keySchedule(uint64_t key, int numBits)
 // The perm arrays refer to the leftmost bit as the 1st.
 uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 {
+    //printf("permute\n");
     uint64_t ans = 0;
-    uint64_t temp;
-    uint64_t mask;
-    int i;
+    uint64_t temp = 0;
+    uint64_t mask = 0;
+    int i = 0;
 
     for(i=0; i<lenOfPerm; i++)
     {
@@ -371,14 +380,15 @@ uint64_t permute(uint64_t text, int sizeOfText, int* perm, int lenOfPerm)
 // Applies all 8 Sboxes to the 48 bit input and returns a 32 bit output.
 uint32_t sBox(uint64_t input)
 {
-    int i;
+    //printf("sbox\n");
     uint64_t ans = 0;
-    uint64_t row;
-    uint64_t col;
+    uint64_t row = 0;
+    uint64_t col = 0;
     // Masks to get the row and col for the sBox.
     uint64_t maskInner = 0b011110000000000000000000000000000000000000000000;
     uint64_t mask48 =    0b100000000000000000000000000000000000000000000000;
     uint64_t mask43 =    0b000001000000000000000000000000000000000000000000;
+    int i = 0;
 
     for(i=0; i<8; i++)
     {
@@ -404,6 +414,7 @@ void printInBinary(uint64_t number, int numBits, int blockSize)
     mask = mask << numBits-1;
     uint64_t digit;
     int i;
+
     for(i=0; i<numBits; i++)
     {
         if(i%blockSize == 0 && i != 0)
