@@ -206,11 +206,16 @@ int main()
         scanf("%d", &range);
         if(range < 1 || range > 25)
             printf("Enter a valid number (25 and larger is too big to be valid).\n");
+        if((startingPoint + range) > 999)
+            printf("You entered a search that would take you passed the end of the key space.\n");
     }while(range < 1 || range > 25);
 
-    int segment = endKey / 1000;
+    uint64_t segment = endKey / 1000;
     startKey = segment * startingPoint;
     endKey = startKey + segment * range;
+
+    //printf("%llu\n", (unsigned long long)segment);
+    printf("startKey\n%llu\nendKey\n%llu\n", (unsigned long long)startKey, (unsigned long long)endKey);
 
     printf("\nSearching the segments %d through %d\n\n\n\n", startingPoint, startingPoint + range - 1);
     printf("\n");
