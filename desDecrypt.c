@@ -236,6 +236,14 @@ int main()
         // have been placed on the key space.
         decryptedCipherText = decrypt(matchingCipherText, generateKey(key));
 
+        if(key % segment == 0)
+        {
+            printf("Completed Segment No. %d\n", startingPoint);
+            printf("unique hash: ");
+            hash(startingPoint++);
+            printf("\n");
+        }
+
         // Break if we have succeeded.
         if(decryptedCipherText == knownPlainText){
             fprintf(out, "The 36 bit key is %llu\n", (unsigned long long)key);
@@ -257,14 +265,7 @@ int main()
     fclose(out);
 
     printf("The program has concluded, but we didn't find the key yet.\nYou searched the following segments.\n");
-    while(range>0)
-    {
-        printf("Segment No. %d\n", startingPoint);
-        printf("unique hash: ");
-        hash(startingPoint++);
-        --range;
-        printf("\n");
-    }
+
     printf("Please go to https://goo.gl/8d8PkY (an online google spreadsheet)\n");
     printf("and paste the above hashes into the appropriate rows to mark these ");
     printf("segments as searched \n(or just send Austin Shipley a picture of it at 352-638-0444 and he'll be more than happy to do it for you).\n\n");
