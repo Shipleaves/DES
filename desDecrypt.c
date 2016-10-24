@@ -274,9 +274,8 @@ int main()
     printf("It took %lf seconds to search %llu keys\n", time_taken, numKeys);
     printf("Thats %lf keys per sec!\n", keysPerSec);
 
-
-
-
+    printf("Press any key to exit.");
+	getchar();
     return 0;
 }
 
