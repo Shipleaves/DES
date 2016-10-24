@@ -249,6 +249,8 @@ int main()
         if(decryptedCipherText == knownPlainText){
             fprintf(out, "The 36 bit key is %llu\n", (unsigned long long)key);
             fprintf(out, "The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
+            printf("The 36 bit key is %llu\n", (unsigned long long)key);
+            printf("The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
             printf("YOU FOUND IT!\nThis program generates a file called ");
             printf("desDecrypt_output.txt that has the key saved in it. \nIf you see this ");
             printf("message then contact Austin Shipley at 352-638-0444 as soon as you can ");
