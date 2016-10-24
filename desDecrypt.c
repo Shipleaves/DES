@@ -236,7 +236,7 @@ int main()
         // have been placed on the key space.
         decryptedCipherText = decrypt(matchingCipherText, generateKey(key));
 
-        if(key % segment == 0)
+        if(key % segment == 0 && key != startKey)
         {
             printf("Completed Segment No. %d\n", startingPoint);
             printf("unique hash: ");
@@ -250,7 +250,7 @@ int main()
             fprintf(out, "The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
             printf("YOU FOUND IT!\nThis program generates a file called ");
             printf("desDecrypt_output.txt that has the key saved in it. \nIf you see this ");
-            printf("message then contact Austin Shipley as soon as you can ");
+            printf("message then contact Austin Shipley at 352-638-0444 as soon as you can ");
             printf("with the information your instance of the program found.\n\n");
             printf("Thanks so much for your help with this project! :)");
             return 0;
@@ -264,7 +264,7 @@ int main()
 
     fclose(out);
 
-    printf("The program has concluded, but we didn't find the key yet.\nYou searched the following segments.\n");
+    printf("The program has concluded, but we didn't find the key yet.\n");
 
     printf("Please go to https://goo.gl/8d8PkY (an online google spreadsheet)\n");
     printf("and paste the above hashes into the appropriate rows to mark these ");
