@@ -238,7 +238,8 @@ int main()
 
         if(key % segment == 0 && key != startKey)
         {
-            printf("Completed Segment No. %d\n", startingPoint++);
+            printf("Completed Segment No. %d\n", startingPoint);
+            fprintf(out, "Completed Segment No. %d\n", startingPoint++);
             //printf("unique hash: ");
             //hash(startingPoint++);
             printf("\n");
