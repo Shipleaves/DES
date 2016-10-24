@@ -144,6 +144,22 @@ int sboxes[8][64] = {
 			   2,  1, 14,  7,  4, 10,  8, 13, 15, 12,  9,  0,  3,  5,  6, 11}
                      };
 
+
+// Global array of bitmasks (more efficient than generating all 12 masks before each key is determined)
+uint64_t keyGenBitMasks[12] = {
+    0b1111100000000000000000000000000000000000000000000000000000000000,
+    0b0000011000000000000000000000000000000000000000000000000000000000,
+    0b0000000111110000000000000000000000000000000000000000000000000000,
+    0b0000000000001100000000000000000000000000000000000000000000000000,
+    0b0000000000000011111000000000000000000000000000000000000000000000,
+    0b0000000000000000000110000000000000000000000000000000000000000000,
+    0b0000000000000000000001111100000000000000000000000000000000000000,
+    0b0000000000000000000000000011000000000000000000000000000000000000,
+    0b0000000000000000000000000000110000000000000000000000000000000000,
+    0b0000000000000000000000000000001100000000000000000000000000000000,
+    0b0000000000000000000000000000000011000000000000000000000000000000,
+    0b0000000000000000000000000000000000110000000000000000000000000000};
+
 // Function signatures.
 uint64_t generateKey(uint64_t key);
 uint64_t decrypt(uint64_t input, uint64_t key);
@@ -153,6 +169,7 @@ uint64_t permute(uint64_t input, int sizeOfInput, int* perm, int lenOfPerm);
 uint32_t sBox(uint64_t input);
 void printInBinary(uint64_t number, int numBits, int blockSize);
 void BinToHex(uint64_t number, int numBits);
+void hash(int number);
 void BinTo64(uint64_t number, int numBits);
 
 // Generates sequential keys and tries to decrypt the cipher text and match it
@@ -162,81 +179,68 @@ int main()
     // The program will try all keys between these these two (and including them).
     // We reassign them based on how many other computers we plan to have
     // running this program.
-    // endKey is 56 bits because we leave out the parity bits, so theres 8 less
-    // bits to generate.
+    // Our instructor has restricted to keySize to 36 bits, generateKey
+    // takes a 36 bit argument and returns a 64 bit key.
+    uint64_t startKey = 0;
+    uint64_t endKey =   0b111111111111111111111111111111111111;
+    int startingPoint, range;
+    FILE *out;
 
-    // Keys for testing, searches 3651576 keys. Takes between 20 seconds to a
-    // couple minutes.
-    uint64_t startKey = 0b00010010011010010101101111001001100000000000000000000000;
-    uint64_t endKey =   0b00010010011010010101101111001001101101111011011111111111;
+    out = fopen("desDecrypt_output.txt", "w");
 
-    // The real keys that we must generate.
-    // We only have to generate 37 bits because the assignment has a restricted
-    // key space.
-    //uint64_t startKey = 0;
-    //uint64_t endKey =   0b1111111111111111111111111111111111111;
+    printf("\n\nBe sure to check https://goo.gl/8d8PkY (the online google spreadsheet) for which segments have been searched already!\n\n");
+    printf("What segment of the keyspace will you be starting at?\n");
+    printf("Enter a number between 0 and 999 (inclusive)\n");
+    do{
+        scanf("%d", &startingPoint);
+        if(startingPoint < 0 || startingPoint > 999)
+            printf("Enter a valid number.\n");
+    }while(startingPoint < 0 || startingPoint > 999);
 
-    uint64_t range = startKey - endKey;
-    int numComputers, yourNum, multiplier;
-    FILE *out, *keylog;
+    printf("\nHow many segments of the key space will you search?\nEach segment has ");
+    printf("about 68,000,000 keys in it (there are 1,000 segments that need ");
+    printf("to be searched).\nA computer that runs 10,000 keys per second ");
+    printf("should take slightly less than 2 hours to search a segment.\n");
+    printf("\nEnter a number greater than or equal to 1\n");
+    do{
+        scanf("%d", &range);
+        if(range < 1 || range > 25)
+            printf("Enter a valid number (25 and larger is too big to be valid).\n");
+    }while(range < 1 || range > 25);
 
-    out = fopen("output.txt", "w");
-    keylog = fopen("keylog.txt", "w");
-/*
-    printf("How many computers will be running this program?\n");
-    scanf("%d", &numComputers);
-    printf("What number are you? 0 through numComputers-1\n");
-    scanf("%d", &yourNum);
-    printf("Is your computer super fast? Want an extra challenge? ");
-    printf("Enter a number to multiply your search space! Or enter 1 to keep ");
-    printf("the normal sized search space.\n");
-    scanf("%d", &multiplier);
+    int segment = endKey / 1000;
+    startKey = segment * startingPoint;
+    endKey = startKey + segment * range;
 
-    range = endKey / numComputers;
-    startKey = range * yourNum;
-    endKey = startKey + range*multiplier;
-*/
-    printf("Searching the range \n");
-    BinToHex(startKey, 64);
-    BinToHex(endKey, 64);
+    printf("\nSearching the segments %d through %d\n\n\n\n", startingPoint, startingPoint + range - 1);
     printf("\n");
 
-    // text for testing, matches the key from above.
-    uint64_t knownPlainText =     0b0000000100100011010001010110011110001001101010111100110111101111;
-    uint64_t matchingCipherText = 0b1000010111101000000100110101010000001111000010101011010000000101;
-
-    // plaintext in radix64 wewin2016+ plus the four 0's for padding.
-    // cipher text in radix64 Azuigo8gxOE minus the two 0's that were padded on.
-    //uint64_t knownPlainText =     0b1100000111101100001000101001111101101101001101011110101111100000;
-    //uint64_t matchingCipherText = 0b0000001100111011101000101000001010001111001000001100010011100001;
+    // Plain text and the matching cipher text that were given to us in the
+    // assignment. Converted from radix64 to binary.
+    uint64_t knownPlainText =     0b1100000111101100001000101001111101101101001101011110101111100000;
+    uint64_t matchingCipherText = 0b0000001100111011101000101000001010001111001000001100010011100001;
 
     uint64_t decryptedCipherText = 0;
     uint64_t key = 0;
-
-    printf("trying to decrypt\n");
-    BinTo64(matchingCipherText, 64);
-    printf("and have it match\n");
-    BinTo64(knownPlainText, 64);
-    printf("\n\n");
 
     clock_t t = clock();
     // Start guessing keys and decrypting.
     for(key = startKey; key <= endKey; key++ )
     {
-        // Generate the 56 bit given given 37 bits using the restrictions that
+        // Generate the 64 key bit given given 36 bits using the restrictions that
         // have been placed on the key space.
-        key = generateKey(key);
-        decryptedCipherText = decrypt(matchingCipherText, key);
-
-        // Print every 100,000,000,000th key. In case of computer crashes
-        // or errors we have some kind of start over point.
-        if(key%100000000000 == 0)
-            fprintf(keylog, "%llu\n", (unsigned long long)key);
+        decryptedCipherText = decrypt(matchingCipherText, generateKey(key));
 
         // Break if we have succeeded.
         if(decryptedCipherText == knownPlainText){
-            printf("We did it!\n");
-            break;
+            fprintf(out, "The 36 bit key is %llu\n", (unsigned long long)key);
+            fprintf(out, "The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
+            printf("YOU FOUND IT!\nThis program generates a file called ");
+            printf("desDecrypt_output.txt that has the key saved in it. \nIf you see this ");
+            printf("message then contact Austin Shipley as soon as you can ");
+            printf("with the information your instance of the program found.\n\n");
+            printf("Thanks so much for your help with this project! :)");
+            return 0;
         }
     }
     t = clock() - t;
@@ -245,37 +249,57 @@ int main()
     double time_taken = ((double)t) / CLOCKS_PER_SEC;
     double keysPerSec = ((double)numKeys) / time_taken;
 
-    fprintf(out, "key %llu\n", (unsigned long long)key);
-    fprintf(out, "It took %lf seconds to search %llu keys\n", time_taken, numKeys);
-    fprintf(out, "Thats %lf keyspersec\n\n", keysPerSec);
-
     fclose(out);
-    fclose(keylog);
 
-    printf("The key I found was \n");
-    BinToHex(key, 56);
-    printInBinary(key, 56, 8);
+    printf("The program has concluded, but we didn't find the key yet.\nYou searched the following segments.\n");
+    while(range>0)
+    {
+        printf("Segment No. %d\n", startingPoint);
+        printf("unique hash: ");
+        hash(startingPoint++);
+        --range;
+        printf("\n");
+    }
+    printf("Please go to https://goo.gl/8d8PkY (an online google spreadsheet)\n");
+    printf("and paste the above hashes into the appropriate rows to mark these ");
+    printf("segments as searched \n(or just send Austin Shipley a picture of it at 352-638-0444 and he'll be more than happy to do it for you).\n\n");
 
-    printf("\nWhat I found the plaintext to be \n");
-    BinToHex(decryptedCipherText, 64);
-    printf("What the plaintext is supposed to be \n");
-    BinToHex(knownPlainText, 64);
+    printf("Thanks for your contribution!\nI encourage you to start the program again with new, unsearched segments!\n\n");
+    printf("It took %lf seconds to search %llu keys\n", time_taken, numKeys);
+    printf("Thats %lf keys per sec!\n", keysPerSec);
+
+
+
 
     return 0;
 }
 
-// Takes baseKey, a 37 bit number, and uses the rules supplied in the assignment
-// to expand it to 64 bits. I've modified the rules to not include parity bits.
-// The rules are ki = k28+i for the following values of i: 1 – 5, 9 – 13,
-// 17 – 21, and 25 – 29.
-uint64_t generateKey(uint64_t baseKey)
-{
-    uint64_t key = 0;
-    uint64_t mask = 1111100000000000000000000000000000000;
-    uint64_t temp = 0;
+// Takes a 36-bit input (current iteration of key being checked)
+// Returns a corresponding key of size 64
+uint64_t generateKey(uint64_t iteration) {
+    // Shift iteration 28 bits left so it's most significant bits align with those of a 64-bit number
+    uint64_t key = iteration << 28;
 
-    temp = baseKey & mask;
-    mask = mask >> 4;
+    // Break up 36 bit iteration input into blocks that can be moved based on key formula:
+    // k_i = k_(32+i) for i: 1 to 5, 9 to 13, 17 to 21, 25 to 29
+    // (All parity bits are left 0 as there value doesn't affect the outcome of DES)
+    uint64_t bits1to5 =   keyGenBitMasks[0] & key;
+    uint64_t bits6to7 =   keyGenBitMasks[1] & key;
+    uint64_t bits8to12 =  keyGenBitMasks[2] & key;
+    uint64_t bits13to14 = keyGenBitMasks[3] & key;
+    uint64_t bits15to19 = keyGenBitMasks[4] & key;
+    uint64_t bits20to21 = keyGenBitMasks[5] & key;
+    uint64_t bits22to26 = keyGenBitMasks[6] & key;
+    uint64_t bits27to28 = keyGenBitMasks[7] & key;
+    uint64_t bits29to30 = keyGenBitMasks[8] & key;
+    uint64_t bits31to32 = keyGenBitMasks[9] & key;
+    uint64_t bits33to34 = keyGenBitMasks[10] & key;
+    uint64_t bits35to36 = keyGenBitMasks[11] & key;
+
+    return (bits1to5) | (bits6to7)| (bits8to12 >> 1) | (bits13to14 >> 1) | (bits15to19 >> 2) | (bits20to21 >> 2) | (bits22to26 >> 3) | (bits27to28 >> 3) | (bits1to5 >> 32) | (bits29to30 >> 9) | (bits8to12 >> 33) |
+
+             (bits15to19 >> 34) | (bits22to26 >> 35) |
+            (bits31to32 >> 15) | (bits33to34 >> 21) | (bits35to36 >> 27);
 }
 
 uint64_t decrypt(uint64_t input, uint64_t key)
@@ -412,8 +436,8 @@ uint64_t* keySchedule(uint64_t key)
     // But we don't have a 48 bit data type, so we must have 16, 64 bit blocks.
     roundKeys = (uint64_t*)malloc(128);
 
-    // Apply the PC1 permutation and split the key into halves.
-    permutedKey = permute(key, 56, PC1, 56);
+    // Apply the PC permutation and split the key into halves.
+    permutedKey = permute(key, 64, PC64, 56);
 
     leftHalf = permutedKey >> 28;
     rightHalf = permutedKey & right;
@@ -904,6 +928,25 @@ void BinToHex(uint64_t number, int numBits)
         }
     }
     printf("\n");
+}
+
+void hash(int number)
+{
+    srand(number+671);
+    unsigned long hash = 5381;
+    char *str = malloc(sizeof(char)*5);;
+    int i;
+
+    number = number * rand() % 1367;
+    sprintf(str, "%d", number);
+
+    while(i = *str++)
+    {
+        hash = ((hash << 5) + hash) + i;
+    }
+
+    free(str);
+    printf("%lu\n", hash%4129);
 }
 
 // Print the number in base64. Inputs must be a multiple of 6 or the last char
