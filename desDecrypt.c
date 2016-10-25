@@ -184,9 +184,6 @@ int main()
     uint64_t startKey = 0;
     uint64_t endKey =   0b111111111111111111111111111111111111;
     int startingPoint, range;
-    FILE *out;
-
-    out = fopen("desDecrypt_output.txt", "w");
 
     printf("\n\nBe sure to check https://goo.gl/8d8PkY (the online google spreadsheet) for which segments have been searched already!\n\n");
     printf("What segment of the keyspace will you be starting at?\n");
@@ -215,8 +212,6 @@ int main()
     endKey = startKey + segment * range;
 
     //printf("%llu\n", (unsigned long long)segment);
-    printf("startKey\n%llu\nendKey\n%llu\n", (unsigned long long)startKey, (unsigned long long)endKey);
-
     printf("\nSearching the segments %d through %d\n\n\n\n", startingPoint, startingPoint + range - 1);
     printf("\n");
 
@@ -238,8 +233,7 @@ int main()
 
         if(key % segment == 0 && key != startKey)
         {
-            printf("Completed Segment No. %d\n", startingPoint);
-            fprintf(out, "Completed Segment No. %d\n", startingPoint++);
+            printf("Completed Segment No. %d\n", startingPoint++);
             //printf("unique hash: ");
             //hash(startingPoint++);
             printf("\n");
@@ -247,8 +241,9 @@ int main()
 
         // Break if we have succeeded.
         if(decryptedCipherText == knownPlainText){
-            fprintf(out, "The 36 bit key is %llu\n", (unsigned long long)key);
-            fprintf(out, "The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
+            FILE* keyFound = fopen("YOUFOUNDTHEKEY.txt", "w");
+            fprintf(keyFound, "The 36 bit key is %llu\n", (unsigned long long)key);
+            fprintf(keyFound, "The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
             printf("The 36 bit key is %llu\n", (unsigned long long)key);
             printf("The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
             printf("YOU FOUND IT!\nThis program generates a file called ");
@@ -256,6 +251,7 @@ int main()
             printf("message then contact Austin Shipley at 352-638-0444 as soon as you can ");
             printf("with the information your instance of the program found.\n\n");
             printf("Thanks so much for your help with this project! :)");
+            fclose(keyFound);
             return 0;
         }
     }
@@ -264,8 +260,6 @@ int main()
     unsigned long long numKeys = key - startKey;
     double time_taken = ((double)t) / CLOCKS_PER_SEC;
     double keysPerSec = ((double)numKeys) / time_taken;
-
-    fclose(out);
 
     printf("The program has concluded, but we didn't find the key yet.\n");
 
