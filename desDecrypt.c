@@ -248,7 +248,7 @@ int main()
             printf("The 64 bit key is %llu\n", (unsigned long long)generateKey(key));
             printf("YOU FOUND IT!\nThis program generates a file called ");
             printf("desDecrypt_output.txt that has the key saved in it. \nIf you see this ");
-            printf("message then contact Austin Shipley at 352-638-0444 as soon as you can ");
+            printf("message then contact Austin Shipley as soon as you can ");
             printf("with the information your instance of the program found.\n\n");
             printf("Thanks so much for your help with this project! :)");
             fclose(keyFound);
@@ -265,7 +265,7 @@ int main()
 
     printf("Please go to https://goo.gl/8d8PkY (an online google spreadsheet)\n");
     printf("and paste the above hashes into the appropriate rows to mark these ");
-    printf("segments as searched \n(or just send Austin Shipley a picture of it at 352-638-0444 and he'll be more than happy to do it for you).\n\n");
+    printf("segments as searched \n(or just send Austin Shipley a picture of it and he'll be more than happy to do it for you).\n\n");
 
     printf("Thanks for your contribution!\nI encourage you to start the program again with new, unsearched segments!\n\n");
     printf("It took %lf seconds to search %llu keys\n", time_taken, numKeys);
